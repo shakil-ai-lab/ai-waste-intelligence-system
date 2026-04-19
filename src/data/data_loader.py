@@ -2,7 +2,7 @@ import os
 import logging
 from pathlib import Path
 from typing import Tuple
-os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
+# os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
 import tensorflow as tf
 
 
