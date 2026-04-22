@@ -93,3 +93,11 @@ target/
 *.bmp
 *.tiff
 *.webp
+
+# MLflow
+mlruns/
+mlflow.db
+
+# MLflow
+mlruns/
+mlflow.db

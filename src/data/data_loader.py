@@ -106,9 +106,9 @@ def load_data(
     except Exception as e:
         logging.error(f"Error in data loading: {str(e)}")
         raise DataLoaderException(e)
-train_ds, val_ds = load_data(
-    data_dir="data/raw",
-    image_size=(224, 224),
-    batch_size=32
-)    
-print(f"Training dataset: {train_ds}")
+# train_ds, val_ds = load_data(
+#     data_dir="data/raw",
+#     image_size=(224, 224),
+#     batch_size=32
+# )    
+# print(f"Training dataset: {train_ds}")
