@@ -1,9 +1,7 @@
-import os
 import logging
 from typing import Tuple
 
 import tensorflow as tf
-os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
 from tensorflow.keras import layers, models
 
 
@@ -30,27 +28,23 @@ class ModelBuilderException(Exception):
 def build_model(
     input_shape: Tuple[int, int, int] = (224, 224, 3),
     num_classes: int = 6,
-    learning_rate: float = 0.001,
-    fine_tune: bool = False
+    learning_rate: float = 1e-3
 ) -> tf.keras.Model:
-    """
-    Build EfficientNet-based classification model
-
-    Args:
-        input_shape (tuple): Input image shape
-        num_classes (int): Number of output classes
-        learning_rate (float): Learning rate
-        fine_tune (bool): Whether to unfreeze top layers
-
-    Returns:
-        model (tf.keras.Model)
-    """
 
     try:
-        logging.info("Starting model building...")
+        logging.info("Building model...")
 
         # -----------------------------
-        # Load Pretrained EfficientNet
+        # Data Augmentation
+        # -----------------------------
+        data_augmentation = tf.keras.Sequential([
+            layers.RandomFlip("horizontal"),
+            layers.RandomRotation(0.1),
+            layers.RandomZoom(0.1),
+        ], name="data_augmentation")
+
+        # -----------------------------
+        # Base Model (EfficientNet)
         # -----------------------------
         base_model = tf.keras.applications.EfficientNetB0(
             include_top=False,
@@ -58,35 +52,32 @@ def build_model(
             input_shape=input_shape
         )
 
-        logging.info("EfficientNetB0 loaded with ImageNet weights")
-
-        # Freeze base model
-        base_model.trainable = False
+        base_model.trainable = False  # Stage 1: frozen
 
         # -----------------------------
-        # Custom Classification Head
+        # Model Architecture
         # -----------------------------
-        x = base_model.output
+        inputs = tf.keras.Input(shape=input_shape)
+
+        x = data_augmentation(inputs)  # augmentation applied here
+        x = base_model(x, training=False)
+
         x = layers.GlobalAveragePooling2D()(x)
         x = layers.BatchNormalization()(x)
+
         x = layers.Dense(128, activation="relu")(x)
-        x = layers.Dropout(0.3)(x)
+        x = layers.Dropout(0.4)(x)
+
         outputs = layers.Dense(num_classes, activation="softmax")(x)
 
-        model = models.Model(inputs=base_model.input, outputs=outputs)
+        # IMPORTANT: name base_model for easy access later
+        model = models.Model(inputs, outputs, name="waste_classifier")
+
+        # attach base_model as attribute (VERY IMPORTANT for fine-tuning)
+        model.base_model = base_model
 
         # -----------------------------
-        # Fine-Tuning (Optional)
-        # -----------------------------
-        if fine_tune:
-            logging.info("Applying fine-tuning...")
-
-            # Unfreeze top layers only
-            for layer in base_model.layers[-20:]:
-                layer.trainable = True
-
-        # -----------------------------
-        # Compile Model
+        # Compile
         # -----------------------------
         model.compile(
             optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
@@ -94,10 +85,57 @@ def build_model(
             metrics=["accuracy"]
         )
 
-        logging.info("Model compiled successfully")
+        logging.info("Model built successfully")
 
         return model
 
     except Exception as e:
         logging.error(f"Error in model building: {str(e)}")
+        raise ModelBuilderException(e)
+
+
+# -----------------------------
+# Fine-Tuning Function
+# -----------------------------
+def apply_fine_tuning(
+    model: tf.keras.Model,
+    unfreeze_layers: int = 10,
+    learning_rate: float = 1e-5
+) -> tf.keras.Model:
+
+    try:
+        logging.info("Applying fine-tuning...")
+
+        # 🔥 FIND base model inside model layers
+        base_model = None
+
+        for layer in model.layers:
+            if isinstance(layer, tf.keras.Model):  # EfficientNet is a Model
+                base_model = layer
+                break
+
+        if base_model is None:
+            raise ValueError("Base model (EfficientNet) not found!")
+
+        # -----------------------------
+        # Fine-Tuning
+        # -----------------------------
+        base_model.trainable = True
+
+        for layer in base_model.layers[:-unfreeze_layers]:
+            layer.trainable = False
+
+        # Recompile with LOW LR
+        model.compile(
+            optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
+            loss="sparse_categorical_crossentropy",
+            metrics=["accuracy"]
+        )
+
+        logging.info("Fine-tuning applied successfully")
+
+        return model
+
+    except Exception as e:
+        logging.error(f"Error in fine-tuning: {str(e)}")
         raise ModelBuilderException(e)
